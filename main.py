@@ -1,19 +1,25 @@
 import cv2
 import numpy as np
+from AlphaBot import AlphaBot
+
+
+car = AlphaBot()
+
 
 # Kernel để sử dụng trong các phép toán morphology
 kernel = np.ones((5, 5), np.uint8)
 
 # Uncomment và đặt đường dẫn đến video nếu bạn muốn xử lý video
 video_path = "dataset/vd2.mp4"
-cap = cv2.VideoCapture(video_path)
+cap = cv2.VideoCapture(1)
 if not cap.isOpened():
     print("Error: Could not open video file.")
     exit()
+center = (0,0)
 
 # Lấy thông tin của video để tạo video output
-width = int(cap.get(3))
-height = int(cap.get(4))
+width = 320 #int(cap.get(3))
+height = 240 #int(cap.get(4))
 original_fps = cap.get(5)
 
 # Giảm tốc độ fps xuống còn 10
@@ -21,8 +27,8 @@ target_fps = 10
 frame_interval = int(original_fps / target_fps)
 
 # Tạo video output
-fourcc = cv2.VideoWriter_fourcc(*'XVID')
-out = cv2.VideoWriter('output_video.avi', fourcc, target_fps, (width, height))
+#fourcc = cv2.VideoWriter_fourcc(*'XVID')
+#out = cv2.VideoWriter('output_video.avi', fourcc, target_fps, (width, height))
 
 # Biến đường dẫn đến hình ảnh mẫu
 image_path = "test.jpg"
@@ -39,16 +45,16 @@ cv2.namedWindow('closing')
 cv2.namedWindow('tracking')
 
 # Tạo trackbar để điều chỉnh ngưỡng màu sắc
-cv2.createTrackbar('hmin', 'HueComp', 29, 179, nothing)
-cv2.createTrackbar('hmax', 'HueComp', 69, 179, nothing)
+cv2.createTrackbar('hmin', 'HueComp', 32, 179, nothing)
+cv2.createTrackbar('hmax', 'HueComp', 80, 179, nothing)
 
 # Tạo trackbar để điều chỉnh ngưỡng độ bão hòa màu
-cv2.createTrackbar('smin', 'SatComp', 119, 255, nothing)
-cv2.createTrackbar('smax', 'SatComp', 255, 255, nothing)
+cv2.createTrackbar('smin', 'SatComp', 90, 255, nothing)
+cv2.createTrackbar('smax', 'SatComp', 155, 255, nothing)
 
 # Tạo trackbar để điều chỉnh ngưỡng độ giá trị màu
-cv2.createTrackbar('vmin', 'ValComp', 87, 255, nothing)
-cv2.createTrackbar('vmax', 'ValComp', 255, 255, nothing)
+cv2.createTrackbar('vmin', 'ValComp', 83, 255, nothing)
+cv2.createTrackbar('vmax', 'ValComp', 177, 255, nothing)
 
 # Khởi tạo biến lưu giữ tâm trước đó
 prev_center = None
@@ -58,10 +64,20 @@ frame_count = 0
 while True:
     buzz = 0
     _, frame = cap.read()
+    frame = cv2.flip(frame, 0) 
+
+
+    frame = cv2.resize(frame, (320, 240), 
+                interpolation = cv2.INTER_LINEAR)
+    # Làm mờ ảnh để giảm nhiễu
+    frame = cv2.GaussianBlur(frame, (15, 15), 0)
 
     # Chuyển đổi ảnh sang không gian màu HSV
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     hue, sat, val = cv2.split(hsv)
+
+
+
 
     # Lấy giá trị ngưỡng từ trackbar
     hmn = cv2.getTrackbarPos('hmin', 'HueComp')
@@ -85,8 +101,6 @@ while True:
     # Đóng các lỗ nhỏ trong các vùng trắng
     closing = cv2.morphologyEx(dilation, cv2.MORPH_CLOSE, kernel)
 
-    # Làm mờ ảnh để giảm nhiễu
-    closing = cv2.GaussianBlur(closing, (15, 15), 0)
 
     # Vẽ các đường thẳng để chia thành các khu vực
     cv2.line(frame, (width // 3, 0), (width // 3, height), (255, 0, 0), 2)  # Đường thẳng giữa và bên trái
@@ -94,11 +108,13 @@ while True:
     cv2.line(frame, (0, height // 2), (width, height // 2), (0, 0, 255), 2)  # Đường ngang chia trên và dưới
 
     # Phát hiện các đối tượng tròn trong ảnh đã được làm mờ
-    circles = cv2.HoughCircles(closing, cv2.HOUGH_GRADIENT, 2, 120, param1=120, param2=50, minRadius=10, maxRadius=0)
+    circles = cv2.HoughCircles(closing, cv2.HOUGH_GRADIENT, 1, 20, param1=120, param2=120, minRadius=0, maxRadius=0)
 
     countLeft = 0
     countRight = 0
     countCenter = 0
+    action = "Stop"
+
     if circles is not None:
         for i in circles[0, :]:
             if int(round(i[2])):
@@ -106,25 +122,28 @@ while True:
                 cv2.circle(frame, (int(round(i[0])), int(round(i[1]))), 2, (0, 255, 0), 10)
                 center = (int(round(i[0])), int(round(i[1])))
                 # Xác định vị trí của quả bóng và thực hiện các hành động tương ứng
-                if center[1] > height // 2:
-                    if center[0] < width // 3:
-                        countLeft += 1
-                    elif center[0] > 2 * width // 3:
-                        countRight += 1
-                    else:
-                        countCenter += 1       
-    if countLeft > countRight and countLeft > countCenter:
+                # if center[1] > height // 2:
+                if center[0] < width // 3:
+                    countLeft += 1
+                elif center[0] > 2 * width // 3:
+                    countRight += 1
+                else:
+                    countCenter += 1       
+    if countLeft >= countRight and countLeft > countCenter:
         action = "Turn Left"
+        car.left()    
         print("Turn Left")
-    elif countRight > countLeft and countRight > countCenter:
+    elif countRight >= countLeft and countRight > countCenter:
         action = "Turn Right"
+        car.right()
         print("Turn Right")
-    elif countCenter > countLeft and countCenter > countRight:
+    elif countCenter >= countLeft and countCenter > countRight:
         action = "Go Ahead"
+        car.forward()
         print("Go Ahead")
-    else:
-        action = "Stop"
-        print("Stop")
+    # elif countCenter + countLeft + countRight == 0:
+    #     car.stop()
+    #     print("Stop")
 
     # Vẽ đường dẫn của đối tượng nếu có
     if prev_center is not None:
@@ -137,16 +156,8 @@ while True:
     font = cv2.FONT_HERSHEY_SIMPLEX
     cv2.putText(frame, action, (50, 50), font, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
-    arrow_center = (100, 70)
-    arrow_length = 50
-    if action == "Turn Left":
-        cv2.arrowedLine(frame, arrow_center, (arrow_center[0] - arrow_length, arrow_center[1]), (0, 0, 255), 2)
-    elif action == "Turn Right":
-        cv2.arrowedLine(frame, arrow_center, (arrow_center[0] + arrow_length, arrow_center[1]), (0, 0, 255), 2)
-    elif action == "Go Ahead":
-        cv2.arrowedLine(frame, arrow_center, (arrow_center[0], arrow_center[1] + arrow_length), (0, 0, 255), 2)
 
-    out.write(frame)  # Ghi frame vào video output
+ #   out.write(frame)  # Ghi frame vào video output
 
     # Hiển thị các thành phần của ảnh trong các cửa sổ tương ứng
     cv2.imshow('HueComp', hthresh)
@@ -162,5 +173,5 @@ while True:
 
 # Giải phóng tài nguyên khi kết thúc
 cap.release()
-out.release()
+#out.release()
 cv2.destroyAllWindows()
